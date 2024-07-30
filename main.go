@@ -41,7 +41,6 @@ func main() {
 	go func() {
 		defer wg.Done()
 		db := database.SetupDatabase()
-		db.Exec("CREATE EXTENSION IF NOT EXISTS 'uuid-ossp'")
 		if err := db.AutoMigrate(
 			&models.Store{},
 			&models.Category{},
