@@ -8,6 +8,7 @@ import (
 // ProductVariant represents the details of product variants in the database.
 type ProductVariant struct {
 	gorm.Model                           // Includes fields like ID, CreatedAt, UpdatedAt, DeletedAt
+	ID                uuid.UUID          `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
 	VariantID         uuid.UUID          `gorm:"type:uuid;default:gen_random_uuid();primaryKey"` // Primary key with auto-generated UUID
 	ProductID         uuid.UUID          `gorm:"type:uuid;not null;index"`                       // Foreign key for the Product
 	SKUCode           string             `gorm:"size:100;not null;unique"`                       // Stock Keeping Unit code, unique
