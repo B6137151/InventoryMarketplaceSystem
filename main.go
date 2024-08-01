@@ -57,29 +57,6 @@ func main() {
 			log.Fatalf("Failed to migrate the tables: %v", err)
 		}
 
-		// if err := db.Exec(`
-		// 	CREATE TABLE IF NOT EXISTS "sales-round-detail" (
-		// 		id             uuid DEFAULT uuid_generate_v4() NOT NULL PRIMARY KEY,
-		// 		created_at     timestamp with time zone DEFAULT now(),
-		// 		updated_at     timestamp with time zone DEFAULT now(),
-		// 		deleted_at     timestamp with time zone,
-		// 		round_id       uuid NOT NULL,
-		// 		variant_id     uuid NOT NULL,
-		// 		quantity       int NOT NULL,
-		// 		remaining      int NOT NULL,
-		// 		product_stock  int NOT NULL,
-		// 		quantity_limit int NOT NULL
-		// 	);
-
-		// 	ALTER TABLE "sales-round-detail" OWNER TO postgres;
-
-		// 	CREATE INDEX IF NOT EXISTS "idx_sales-round-detail_variant_id" ON "sales-round-detail" (variant_id);
-		// 	CREATE INDEX IF NOT EXISTS "idx_sales-round-detail_round_id" ON "sales-round-detail" (round_id);
-		// 	CREATE INDEX IF NOT EXISTS "idx_sales-round-detail_deleted_at" ON "sales-round-detail" (deleted_at);
-		// `).Error; err != nil {
-		// 	log.Fatalf("Failed to perform manual migration: %v", err)
-		// }
-
 		dbChan <- db
 		close(dbChan)
 	}()

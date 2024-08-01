@@ -20,12 +20,28 @@ type PurchaseService interface {
 }
 
 type purchaseService struct {
-	orderRepo       repositories.OrderRepository
-	orderDetailRepo repositories.OrderDetailRepository
-	// orderDetail 		 repositories.OrderDetailRepository
+	orderRepo            repositories.OrderRepository
+	orderDetailRepo      repositories.OrderDetailRepository
 	productVariantRepo   repositories.ProductVariantRepository
 	productRepo          repositories.ProductRepository
 	salesRoundDetailRepo repositories.SalesRoundDetailRepository
+}
+
+// NewPurchaseService creates a new instance of PurchaseService
+func NewPurchaseService(
+	orderRepo repositories.OrderRepository,
+	orderDetailRepo repositories.OrderDetailRepository,
+	productVariantRepo repositories.ProductVariantRepository,
+	productRepo repositories.ProductRepository,
+	salesRoundDetailRepo repositories.SalesRoundDetailRepository,
+) PurchaseService {
+	return &purchaseService{
+		orderRepo:            orderRepo,
+		orderDetailRepo:      orderDetailRepo,
+		productVariantRepo:   productVariantRepo,
+		productRepo:          productRepo,
+		salesRoundDetailRepo: salesRoundDetailRepo,
+	}
 }
 
 func (s *purchaseService) MakePurchase(request dtos.PurchaseCreateDTO) (dtos.OrderResponseDTO, error) {
@@ -65,6 +81,12 @@ func (s *purchaseService) MakePurchase(request dtos.PurchaseCreateDTO) (dtos.Ord
 		}
 
 		totalPrice += productVariant.Price * float64(item.Quantity)
+
+		// Update sales round detail
+		salesRoundDetail.Quantity -= item.Quantity
+		if err := s.salesRoundDetailRepo.UpdateSalesRoundDetail(salesRoundDetail); err != nil {
+			return dtos.OrderResponseDTO{}, err
+		}
 	}
 
 	// Create order
@@ -111,16 +133,6 @@ func (s *purchaseService) MakePurchase(request dtos.PurchaseCreateDTO) (dtos.Ord
 		if err := s.orderDetailRepo.CreateOrderDetail(&orderDetail); err != nil {
 			return dtos.OrderResponseDTO{}, err
 		}
-
-		// Update sales round detail
-
-		//   s.salesRoundDetailRep
-
-		//   s.salesRoundDetail.Quantity -= item.Quantity
-		//   if err := s.salesRoundDetailRepo.UpdateSalesRoundDetail(salesRoundDetail); err != nil{
-		// 	return dtos.OrderResponseDTO{} ,err
-		//   }
-
 	}
 
 	response := dtos.OrderResponseDTO{
