@@ -2,10 +2,11 @@ package repositories
 
 import (
 	"fmt"
+	"log"
+
 	"github.com/B6137151/InventoryMarketplaceSystem/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"log"
 )
 
 type OrderRepository interface {

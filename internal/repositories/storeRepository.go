@@ -1,10 +1,11 @@
 package repositories
 
 import (
+	"sync"
+
 	"github.com/B6137151/InventoryMarketplaceSystem/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"sync"
 )
 
 type StoreRepository interface {

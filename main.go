@@ -10,6 +10,7 @@ import (
 	"github.com/B6137151/InventoryMarketplaceSystem/internal/models"
 	"github.com/B6137151/InventoryMarketplaceSystem/internal/repositories"
 	"github.com/B6137151/InventoryMarketplaceSystem/internal/route"
+	"github.com/B6137151/InventoryMarketplaceSystem/internal/services"
 	"github.com/B6137151/InventoryMarketplaceSystem/pkg/database"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -90,63 +91,46 @@ func main() {
 		return
 	}
 
-	// Initialize repositories and controllers, and register routes
-
-	// Store
+	// Initialize repositories
 	storeRepository := repositories.NewStoreRepository(db)
-	storeController := controllers.NewStoreController(storeRepository)
-	route.RegisterStoreRoutes(app, storeController)
-
-	// Category
 	categoryRepository := repositories.NewCategoryRepository(db)
-	categoryController := controllers.NewCategoryController(categoryRepository)
-	route.RegisterCategoryRoutes(app, categoryController)
-
-	// Customer
 	customerRepository := repositories.NewCustomerRepository(db)
-	customerController := controllers.NewCustomerController(customerRepository)
-	route.RegisterCustomerRoutes(app, customerController)
-
-	// Product
 	productRepository := repositories.NewProductRepository(db)
-	productController := controllers.NewProductController(productRepository)
-	route.RegisterProductRoutes(app, productController)
-
-	// Product Variant
 	productVariantRepository := repositories.NewProductVariantRepository(db)
-	productVariantController := controllers.NewProductVariantController(productVariantRepository)
-	route.RegisterProductVariantRoutes(app, productVariantController)
-
-	// Sales Round
 	salesRoundRepository := repositories.NewSalesRoundRepository(db)
-	orderRepository := repositories.NewOrderRepository(db) // Initialize order repository
+	orderRepository := repositories.NewOrderRepository(db)
 	salesRoundDetailRepository := repositories.NewSalesRoundDetailRepository(db)
-
-	salesRoundController := controllers.NewSalesRoundController(salesRoundRepository, orderRepository, salesRoundDetailRepository)
-	route.RegisterSalesRoundRoutes(app, salesRoundController)
-
-	// Sales Round Detail
-	salesRoundDetailController := controllers.NewSalesRoundDetailController(salesRoundDetailRepository)
-	route.RegisterSalesRoundDetailRoutes(app, salesRoundDetailController)
-
-	// Order
-	orderController := controllers.NewOrderController(orderRepository)
-	route.RegisterOrderRoutes(app, orderController)
-
-	// Order Detail
 	orderDetailRepository := repositories.NewOrderDetailRepository(db)
-	orderDetailController := controllers.NewOrderDetailController(orderDetailRepository)
-	route.RegisterOrderDetailRoutes(app, orderDetailController)
-
-	// Order History
 	orderHistoryRepository := repositories.NewOrderHistoryRepository(db)
-	orderHistoryController := controllers.NewOrderHistoryController(orderHistoryRepository)
-	route.RegisterOrderHistoryRoutes(app, orderHistoryController)
 
-	// Purchase
-	//purchaseRepository := repositories.NewPurchaseRepository(db)
-	//purchaseController := controllers.NewPurchaseController(purchaseRepository, productVariantRepository, salesRoundDetailRepository)
-	//route.RegisterPurchaseRoutes(app, purchaseController)
+	// Initialize services
+	purchaseService := services.NewPurchaseService(orderRepository, orderDetailRepository, productVariantRepository, productRepository, salesRoundDetailRepository)
+
+	// Initialize controllers
+	storeController := controllers.NewStoreController(storeRepository)
+	categoryController := controllers.NewCategoryController(categoryRepository)
+	customerController := controllers.NewCustomerController(customerRepository)
+	productController := controllers.NewProductController(productRepository)
+	productVariantController := controllers.NewProductVariantController(productVariantRepository)
+	salesRoundController := controllers.NewSalesRoundController(salesRoundRepository, orderRepository, salesRoundDetailRepository)
+	salesRoundDetailController := controllers.NewSalesRoundDetailController(salesRoundDetailRepository)
+	orderController := controllers.NewOrderController(purchaseService) // Updated to use PurchaseService
+	orderDetailController := controllers.NewOrderDetailController(orderDetailRepository)
+	orderHistoryController := controllers.NewOrderHistoryController(orderHistoryRepository)
+	purchaseController := controllers.NewPurchaseController(purchaseService)
+
+	// Register routes
+	route.RegisterStoreRoutes(app, storeController)
+	route.RegisterCategoryRoutes(app, categoryController)
+	route.RegisterCustomerRoutes(app, customerController)
+	route.RegisterProductRoutes(app, productController)
+	route.RegisterProductVariantRoutes(app, productVariantController)
+	route.RegisterSalesRoundRoutes(app, salesRoundController)
+	route.RegisterSalesRoundDetailRoutes(app, salesRoundDetailController)
+	route.RegisterOrderRoutes(app, orderController)
+	route.RegisterOrderDetailRoutes(app, orderDetailController)
+	route.RegisterOrderHistoryRoutes(app, orderHistoryController)
+	route.RegisterPurchaseRoutes(app, purchaseController)
 
 	// Serve a simple message at the root URL
 	app.Get("/", func(c *fiber.Ctx) error {

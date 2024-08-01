@@ -6,7 +6,7 @@ import (
 
 	"github.com/B6137151/InventoryMarketplaceSystem/internal/dtos"
 	"github.com/B6137151/InventoryMarketplaceSystem/internal/models"
-	"github.com/B6137151/InventoryMarketplaceSystem/internal/repositories"
+	"github.com/B6137151/InventoryMarketplaceSystem/internal/services"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 )
@@ -19,11 +19,11 @@ type OrderController interface {
 }
 
 type orderController struct {
-	orderRepository repositories.OrderRepository
+	purchaseService services.PurchaseService
 }
 
-func NewOrderController(orderRepository repositories.OrderRepository) OrderController {
-	return &orderController{orderRepository: orderRepository}
+func NewOrderController(purchaseService services.PurchaseService) OrderController {
+	return &orderController{purchaseService: purchaseService}
 }
 
 // CreateOrder godoc
@@ -43,46 +43,31 @@ func (h *orderController) CreateOrder(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "request body is not valid"})
 	}
 
-	order := models.Order{
+	// Convert OrderItemDTO to PurchaseItemDTO
+	items := make([]dtos.PurchaseItemDTO, len(dto.Items))
+	for i, item := range dto.Items {
+		items[i] = dtos.PurchaseItemDTO{
+			VariantID: item.VariantID,
+			Quantity:  item.Quantity,
+		}
+	}
+
+	// Use the PurchaseService to create the order
+	response, err := h.purchaseService.MakePurchase(dtos.PurchaseCreateDTO{
 		CustomerID:      dto.CustomerID,
 		RoundID:         dto.RoundID,
 		OrderDate:       dto.OrderDate,
-		Status:          dto.Status,
-		Code:            dto.Code,
-		TotalPrice:      dto.TotalPrice,
 		DeliveryAddress: dto.DeliveryAddress,
 		PaymentSource:   dto.PaymentSource,
+		Items:           items,
+	})
+	if err != nil {
+		if err.Error() == "not enough stock" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "not enough stock"})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	var wg sync.WaitGroup
-	errChan := make(chan error, 1)
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-		errChan <- h.orderRepository.CreateOrder(&order)
-	}()
-
-	wg.Wait()
-	close(errChan)
-
-	if err := <-errChan; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not create order"})
-	}
-
-	response := dtos.OrderResponseDTO{
-		ID:              order.ID,
-		CustomerID:      order.CustomerID,
-		RoundID:         order.RoundID,
-		OrderDate:       order.OrderDate,
-		Status:          order.Status,
-		Code:            order.Code,
-		TotalPrice:      order.TotalPrice,
-		DeliveryAddress: order.DeliveryAddress,
-		PaymentSource:   order.PaymentSource,
-		CreatedAt:       order.CreatedAt.Format("2006-01-02 15:04:05"),
-		UpdatedAt:       order.UpdatedAt.Format("2006-01-02 15:04:05"),
-	}
 	return c.Status(fiber.StatusCreated).JSON(response)
 }
 
@@ -105,7 +90,7 @@ func (h *orderController) GetAllOrders(c *fiber.Ctx) error {
 	go func() {
 		defer wg.Done()
 		var err error
-		orders, err = h.orderRepository.GetAllOrders()
+		orders, err = h.purchaseService.GetAllOrders() // Add GetAllOrders method to PurchaseService
 		errChan <- err
 	}()
 
@@ -168,7 +153,7 @@ func (h *orderController) UpdateOrder(c *fiber.Ctx) error {
 	done := make(chan bool)
 	go func() {
 		defer close(errChan)
-		order, err = h.orderRepository.GetOrderByID(uuid)
+		order, err = h.purchaseService.GetOrderByID(uuid) // Add GetOrderByID method to PurchaseService
 		if err != nil {
 			errChan <- err
 			return
@@ -185,7 +170,7 @@ func (h *orderController) UpdateOrder(c *fiber.Ctx) error {
 		order.DeliveryAddress = dto.DeliveryAddress
 		order.PaymentSource = dto.PaymentSource
 
-		if updateErr := h.orderRepository.UpdateOrder(order); updateErr != nil {
+		if updateErr := h.purchaseService.UpdateOrder(order); updateErr != nil { // Add UpdateOrder method to PurchaseService
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not update order"})
 		}
 	case err := <-errChan:
@@ -229,7 +214,7 @@ func (h *orderController) DeleteOrder(c *fiber.Ctx) error {
 
 	go func() {
 		defer wg.Done()
-		errChan <- h.orderRepository.DeleteOrder(uuid)
+		errChan <- h.purchaseService.DeleteOrder(uuid) // Add DeleteOrder method to PurchaseService
 	}()
 
 	wg.Wait()
