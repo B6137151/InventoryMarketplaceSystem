@@ -8,12 +8,17 @@ import (
 // ProductVariant represents the details of product variants in the database.
 type ProductVariant struct {
 	gorm.Model                           // Includes fields like ID, CreatedAt, UpdatedAt, DeletedAt
-	ID                uuid.UUID          `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	VariantID         uuid.UUID          `gorm:"type:uuid;default:gen_random_uuid();primaryKey"` // Primary key with auto-generated UUID
+	ID                uuid.UUID          `gorm:"type:uuid;default:gen_random_uuid();primaryKey"` // Primary key with auto-generated UUID
+	VariantID         uuid.UUID          `gorm:"type:uuid;default:gen_random_uuid();unique"`     // Unique identifier for the variant
 	ProductID         uuid.UUID          `gorm:"type:uuid;not null;index"`                       // Foreign key for the Product
 	SKUCode           string             `gorm:"size:100;not null;unique"`                       // Stock Keeping Unit code, unique
 	Price             float64            `gorm:"not null"`                                       // Price of the product variant
 	ImageURL          string             `gorm:"size:255"`                                       // URL to the image of the product variant
+	Product           Product            `gorm:"foreignKey:ProductID"`                           // Relationship to Product
+	CategoryID        uuid.UUID          `gorm:"type:uuid;index"`                                // Foreign key for Category
+	Category          Category           `gorm:"foreignKey:CategoryID"`                          // Relationship to Category
+	StoreID           uuid.UUID          `gorm:"type:uuid;index"`                                // Foreign key for Store
+	Store             Store              `gorm:"foreignKey:StoreID"`                             // Relationship to Store
 	SalesRoundDetails []SalesRoundDetail `gorm:"foreignKey:VariantID"`                           // One-to-many relationship with SalesRoundDetail
 	OrderDetails      []OrderDetail      `gorm:"foreignKey:VariantID"`                           // One-to-many relationship with OrderDetail
 }

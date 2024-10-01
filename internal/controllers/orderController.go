@@ -1,14 +1,20 @@
 package controllers
 
 import (
+	"fmt"
 	"runtime"
 	"sync"
+	"time"
+
+	"log"
 
 	"github.com/B6137151/InventoryMarketplaceSystem/internal/dtos"
 	"github.com/B6137151/InventoryMarketplaceSystem/internal/models"
+	"github.com/B6137151/InventoryMarketplaceSystem/internal/repositories"
 	"github.com/B6137151/InventoryMarketplaceSystem/internal/services"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type OrderController interface {
@@ -16,127 +22,119 @@ type OrderController interface {
 	GetAllOrders(c *fiber.Ctx) error
 	UpdateOrder(c *fiber.Ctx) error
 	DeleteOrder(c *fiber.Ctx) error
+	CompleteOrder(c *fiber.Ctx) error
+	GetOrderByID(c *fiber.Ctx) error // Add GetOrderByID to the interface
 }
 
 type orderController struct {
 	purchaseService services.PurchaseService
+	cartRepository  repositories.CartRepository
+	orderRepository repositories.OrderRepository
 }
 
-func NewOrderController(purchaseService services.PurchaseService) OrderController {
-	return &orderController{purchaseService: purchaseService}
+func NewOrderController(purchaseService services.PurchaseService, cartRepository repositories.CartRepository, orderRepository repositories.OrderRepository) OrderController {
+	return &orderController{
+		purchaseService: purchaseService,
+		cartRepository:  cartRepository,
+		orderRepository: orderRepository,
+	}
 }
 
-// CreateOrder godoc
-// @Summary Create a new order
-// @Description Create a new order
-// @Tags Orders
-// @Accept json
-// @Produce json
-// @Param order body dtos.OrderCreateDTO true "Order"
-// @Success 201 {object} dtos.OrderResponseDTO
-// @Failure 400 {object} fiber.Map
-// @Failure 500 {object} fiber.Map
-// @Router /orders [post]
-func (h *orderController) CreateOrder(c *fiber.Ctx) error {
+// GetOrderByID retrieves an order by its ID
+func (ctrl *orderController) GetOrderByID(c *fiber.Ctx) error {
+	id := c.Params("id")
+
+	// Parse UUID from the string
+	orderID, err := uuid.Parse(id)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid order ID format",
+		})
+	}
+
+	// Fetch the order from the database using the repository
+	order, err := ctrl.orderRepository.GetOrderByID(orderID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": "Order not found",
+			})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Error retrieving the order",
+		})
+	}
+
+	// Return the order details as a response
+	return c.JSON(order)
+}
+
+func (ctrl *orderController) CreateOrder(c *fiber.Ctx) error {
 	dto := new(dtos.OrderCreateDTO)
 	if err := c.BodyParser(dto); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "request body is not valid"})
 	}
 
-	// Convert OrderItemDTO to PurchaseItemDTO
-	items := make([]dtos.PurchaseItemDTO, len(dto.Items))
-	for i, item := range dto.Items {
-		items[i] = dtos.PurchaseItemDTO{
-			VariantID: item.VariantID,
-			Quantity:  item.Quantity,
-		}
-	}
-
-	// Use the PurchaseService to create the order
-	response, err := h.purchaseService.MakePurchase(dtos.PurchaseCreateDTO{
+	orderID := uuid.New()
+	order := models.Order{
+		ID:              orderID,
 		CustomerID:      dto.CustomerID,
 		RoundID:         dto.RoundID,
-		OrderDate:       dto.OrderDate,
+		Status:          models.OrderStatus("Processing"),
+		OrderDate:       time.Now(),
+		TotalPrice:      dto.TotalPrice,
 		DeliveryAddress: dto.DeliveryAddress,
-		PaymentSource:   dto.PaymentSource,
-		Items:           items,
-	})
+		PaymentSource:   dto.PaymentSource, // Now treated as a regular string
+	}
+	if err := ctrl.orderRepository.CreateOrder(&order); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"order_id": orderID})
+}
+
+func (ctrl *orderController) GetAllOrders(c *fiber.Ctx) error {
+	orders, err := ctrl.purchaseService.GetAllOrders()
 	if err != nil {
-		if err.Error() == "not enough stock" {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "not enough stock"})
-		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(response)
-}
-
-// GetAllOrders godoc
-// @Summary Get all orders
-// @Description Get all orders
-// @Tags Orders
-// @Accept json
-// @Produce json
-// @Success 200 {array} dtos.OrderResponseDTO
-// @Failure 500 {object} fiber.Map
-// @Router /orders [get]
-func (h *orderController) GetAllOrders(c *fiber.Ctx) error {
-	var orders []models.Order
-
-	var wg sync.WaitGroup
-	errChan := make(chan error, 1)
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-		var err error
-		orders, err = h.purchaseService.GetAllOrders() // Add GetAllOrders method to PurchaseService
-		errChan <- err
-	}()
-
-	wg.Wait()
-	close(errChan)
-
-	if err := <-errChan; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not retrieve orders"})
-	}
-
-	var orderResponses []dtos.OrderResponseDTO
-	for _, order := range orders {
-		orderResponses = append(orderResponses, dtos.OrderResponseDTO{
+	orderResponses := make([]dtos.OrderResponseDTO, len(orders))
+	for i, order := range orders {
+		orderResponses[i] = dtos.OrderResponseDTO{
 			ID:              order.ID,
-			CustomerID:      order.CustomerID,
-			RoundID:         order.RoundID,
 			OrderDate:       order.OrderDate,
-			Status:          order.Status,
-			Code:            order.Code,
+			Status:          string(order.Status),
 			TotalPrice:      order.TotalPrice,
 			DeliveryAddress: order.DeliveryAddress,
-			PaymentSource:   order.PaymentSource,
-			CreatedAt:       order.CreatedAt.Format("2006-01-02 15:04:05"),
-			UpdatedAt:       order.UpdatedAt.Format("2006-01-02 15:04:05"),
-		})
+			PaymentSource:   order.PaymentSource, // Now treated as a regular string
+			Customer: dtos.CustomerDTO{
+				ID:    order.Customer.ID,
+				Name:  order.Customer.Name,
+				Email: order.Customer.Email,
+			},
+			SalesRound: dtos.SalesRoundDTO{
+				ID:        order.SalesRound.ID,
+				Name:      order.SalesRound.Name,
+				StartDate: order.SalesRound.StartDate,
+				EndDate:   order.SalesRound.EndDate,
+			},
+			PaymentInfo: dtos.PaymentInfoDTO{
+				PaymentMethod: order.PaymentInfo.PaymentMethod,
+				PaymentStatus: order.PaymentInfo.PaymentStatus,
+				TransactionID: order.PaymentInfo.TransactionID,
+			},
+			ShippingInfo: dtos.ShippingInfoDTO{
+				ShippingMethod:        order.ShippingInfo.ShippingMethod,
+				EstimatedDeliveryDate: order.ShippingInfo.EstimatedDeliveryDate,
+			},
+		}
 	}
-
 	return c.JSON(orderResponses)
 }
 
-// UpdateOrder godoc
-// @Summary Update an order
-// @Description Update an order
-// @Tags Orders
-// @Accept json
-// @Produce json
-// @Param id path string true "Order ID"
-// @Param order body dtos.OrderUpdateDTO true "Order"
-// @Success 200 {object} dtos.OrderResponseDTO
-// @Failure 400 {object} fiber.Map
-// @Failure 404 {object} fiber.Map
-// @Failure 500 {object} fiber.Map
-// @Router /orders/{id} [put]
-func (h *orderController) UpdateOrder(c *fiber.Ctx) error {
+func (ctrl *orderController) UpdateOrder(c *fiber.Ctx) error {
 	id := c.Params("id")
-	uuid, err := uuid.Parse(id)
+	orderID, err := uuid.Parse(id)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid UUID format"})
 	}
@@ -146,87 +144,174 @@ func (h *orderController) UpdateOrder(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "request body is not valid"})
 	}
 
-	var order *models.Order
-
-	// Use a goroutine to fetch order with synchronization
-	errChan := make(chan error, 1)
-	done := make(chan bool)
-	go func() {
-		defer close(errChan)
-		order, err = h.purchaseService.GetOrderByID(uuid) // Add GetOrderByID method to PurchaseService
-		if err != nil {
-			errChan <- err
-			return
-		}
-		done <- true // signal completion of fetch
-	}()
-
-	// Wait for the fetch to complete or an error
-	select {
-	case <-done:
-		// Continue with update if fetch was successful
-		order.Status = dto.Status
-		order.TotalPrice = dto.TotalPrice
-		order.DeliveryAddress = dto.DeliveryAddress
-		order.PaymentSource = dto.PaymentSource
-
-		if updateErr := h.purchaseService.UpdateOrder(order); updateErr != nil { // Add UpdateOrder method to PurchaseService
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not update order"})
-		}
-	case err := <-errChan:
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "order not found", "details": err.Error()})
+	order, err := ctrl.purchaseService.GetOrderByID(orderID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	response := dtos.OrderResponseDTO{
-		ID:              order.ID,
-		CustomerID:      order.CustomerID,
-		RoundID:         order.RoundID,
-		OrderDate:       order.OrderDate,
-		Status:          order.Status,
-		Code:            order.Code,
-		TotalPrice:      order.TotalPrice,
-		DeliveryAddress: order.DeliveryAddress,
-		PaymentSource:   order.PaymentSource,
-		CreatedAt:       order.CreatedAt.Format("2006-01-02 15:04:05"),
-		UpdatedAt:       order.UpdatedAt.Format("2006-01-02 15:04:05"),
+	order.Status = models.OrderStatus(dto.Status)
+	order.TotalPrice = dto.TotalPrice
+	order.DeliveryAddress = dto.DeliveryAddress
+	order.PaymentSource = dto.PaymentSource // Now treated as a regular string
+
+	if err := ctrl.purchaseService.UpdateOrder(order); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
-	return c.JSON(response)
+	return c.JSON(fiber.Map{"status": "updated"})
 }
 
-// DeleteOrder godoc
-// @Summary Delete an order
-// @Description Delete an order
-// @Tags Orders
-// @Param id path string true "Order ID"
-// @Success 204
-// @Failure 500 {object} fiber.Map
-// @Router /orders/{id} [delete]
-func (h *orderController) DeleteOrder(c *fiber.Ctx) error {
+func (ctrl *orderController) DeleteOrder(c *fiber.Ctx) error {
 	id := c.Params("id")
-	uuid, err := uuid.Parse(id)
+	orderID, err := uuid.Parse(id)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid UUID format"})
 	}
-
-	var wg sync.WaitGroup
-	errChan := make(chan error, 1)
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-		errChan <- h.purchaseService.DeleteOrder(uuid) // Add DeleteOrder method to PurchaseService
-	}()
-
-	wg.Wait()
-	close(errChan)
-
-	if err := <-errChan; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not delete order"})
+	if err := ctrl.purchaseService.DeleteOrder(orderID); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
+func (ctrl *orderController) CompleteOrder(c *fiber.Ctx) error {
+	// Log the start of the request
+	log.Println("Starting CompleteOrder request")
+
+	// Parse the cart ID from the request
+	cartID := c.Params("cartID")
+	log.Printf("Received cartID: %s", cartID)
+
+	// Convert cartID string to uuid.UUID
+	cartUUID, err := uuid.Parse(cartID)
+	if err != nil {
+		log.Printf("Invalid cart ID format: %s, error: %v", cartID, err)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Invalid cart ID format",
+			"error":   err.Error(),
+		})
+	}
+
+	log.Printf("Parsed cart UUID: %s", cartUUID)
+
+	var cart *models.Cart
+	var wg sync.WaitGroup
+	errChan := make(chan error, 1)
+
+	// Log before fetching cart details
+	log.Println("Fetching cart details")
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		cart, err = ctrl.cartRepository.GetCartByID(cartUUID)
+		if err != nil {
+			log.Printf("Error fetching cart with ID %s: %v", cartUUID, err)
+			errChan <- fmt.Errorf("Cart not found: %v", err)
+			return
+		}
+		log.Printf("Fetched cart: %+v", cart)
+	}()
+	wg.Wait()
+
+	// Check if any errors occurred during fetching the cart
+	select {
+	case err := <-errChan:
+		log.Printf("Failed to fetch cart: %v", err)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "Failed to fetch cart",
+			"error":   err.Error(),
+		})
+	default:
+		log.Println("Successfully fetched cart")
+	}
+
+	// Ensure the cart has a valid PaymentSource, else return an error
+	log.Println("Checking if PaymentSource is set in the cart")
+	if cart.PaymentSource == "" {
+		log.Println("PaymentSource is not set in the cart")
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"message": "PaymentSource is not set in the cart",
+		})
+	}
+
+	// Log before checking existing order
+	log.Println("Checking if an order already exists for this cart")
+	existingOrder, err := ctrl.orderRepository.GetOrderByCartID(cartUUID)
+	if err != nil && err != gorm.ErrRecordNotFound {
+		log.Printf("Error checking existing order for cart ID %s: %v", cartUUID, err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Failed to check existing order",
+			"error":   err.Error(),
+		})
+	}
+
+	var order models.Order
+	if existingOrder != nil {
+		// If an order already exists, use the existing order ID
+		order = *existingOrder
+		log.Printf("Using existing order ID: %s", order.ID)
+	} else {
+		// If no existing order, create a new order
+		log.Println("Creating a new order")
+		orderID := uuid.New()
+		order = models.Order{
+			ID:              orderID,
+			CustomerID:      cart.CustomerID,
+			RoundID:         cart.RoundID,
+			Status:          models.OrderStatus("Processing"),
+			OrderDate:       time.Now(),
+			PaymentSource:   cart.PaymentSource, // Now treated as a regular string
+			DeliveryAddress: cart.DeliveryAddress,
+			CartID:          cart.ID,
+			TotalPrice:      cart.TotalAmount,
+
+			PaymentInfo: models.PaymentInfo{
+				PaymentMethod: cart.PaymentSource, // Now treated as a regular string
+				TransactionID: "ABC123",
+				PaymentStatus: "Completed",
+				PaidAmount:    cart.TotalAmount,
+				PaidCurrency:  cart.Currency,
+			},
+			ShippingInfo: models.ShippingInfo{
+				ShippingMethod:   "Express",
+				TrackingNumber:   "TRACK123456",
+				CarrierName:      "DHL",
+				ShippingStatus:   "Shipped",
+				EstimatedArrival: time.Now().AddDate(0, 0, 5),
+			},
+		}
+
+		// Log before order creation
+		log.Println("Inserting new order into the database")
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := ctrl.orderRepository.CreateOrder(&order); err != nil {
+				log.Printf("Error creating order for cart ID %s: %v", cartUUID, err)
+				errChan <- fmt.Errorf("Failed to create order: %v", err)
+			} else {
+				log.Printf("Order created successfully: %+v", order)
+			}
+		}()
+		wg.Wait()
+	}
+
+	// Check if any errors occurred during the order creation process
+	select {
+	case err := <-errChan:
+		log.Printf("Failed to create order: %v", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"message": "Failed to create order",
+			"error":   err.Error(),
+		})
+	default:
+		log.Printf("Order completed successfully with ID: %s", order.ID)
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{
+			"message":        "Order completed successfully",
+			"order_id":       order.ID,
+			"payment_source": order.PaymentSource,
+		})
+	}
+}
+
 func init() {
-	// Use all available cores
 	runtime.GOMAXPROCS(runtime.NumCPU())
 }

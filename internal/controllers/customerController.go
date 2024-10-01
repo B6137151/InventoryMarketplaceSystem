@@ -1,13 +1,14 @@
 package controllers
 
 import (
+	"runtime"
+	"sync"
+
 	"github.com/B6137151/InventoryMarketplaceSystem/internal/dtos"
 	"github.com/B6137151/InventoryMarketplaceSystem/internal/models"
 	"github.com/B6137151/InventoryMarketplaceSystem/internal/repositories"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
-	"runtime"
-	"sync"
 )
 
 type CustomerController interface {
@@ -76,7 +77,7 @@ func (h *customerController) CreateCustomer(c *fiber.Ctx) error {
 // @Tags Customers
 // @Accept json
 // @Produce json
-// @Success 200 {array} dtos.CustomerResponseDTO
+// @Success 200 {object} dtos.CustomersResponse
 // @Failure 500 {object} fiber.Map
 // @Router /customers [get]
 func (h *customerController) GetAllCustomers(c *fiber.Ctx) error {
@@ -111,7 +112,15 @@ func (h *customerController) GetAllCustomers(c *fiber.Ctx) error {
 		})
 	}
 
-	return c.JSON(customerResponses)
+	response := dtos.CustomersResponse{
+		Meta: dtos.MetaData{
+			Total: len(customers), // Total number of customers
+			Count: len(customers), // Number of customers in this response
+		},
+		Data: customerResponses,
+	}
+
+	return c.JSON(response)
 }
 
 // UpdateCustomer godoc

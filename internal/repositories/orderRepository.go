@@ -20,6 +20,8 @@ type OrderRepository interface {
 	GetTotalItemsOrdered(roundID uuid.UUID) (int, error)
 	GetTotalItemsSold(roundID uuid.UUID) (int, error)
 	GetOrdersByRoundID(roundID uuid.UUID) ([]models.Order, error)
+	GenLastCode() (string, error)
+	GetOrderByCartID(cartID uuid.UUID) (*models.Order, error) // New method
 }
 
 type orderRepository struct {
@@ -30,20 +32,44 @@ func NewOrderRepository(db *gorm.DB) OrderRepository {
 	return &orderRepository{db: db}
 }
 
-func (r *orderRepository) CreateOrder(order *models.Order) error {
+func (repo *orderRepository) CreateOrder(order *models.Order) error {
 	errChan := make(chan error, 1)
+
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				log.Printf("Recovered in CreateOrder: %v", r)
-				errChan <- fmt.Errorf("internal server error")
+				errChan <- fmt.Errorf("recovered from panic: %v", r)
 			}
 			close(errChan)
 		}()
-		errChan <- r.db.Create(order).Error
+
+		// Start a transaction
+		tx := repo.db.Begin()
+		if tx.Error != nil {
+			errChan <- tx.Error
+			return
+		}
+
+		// Attempt to create the order
+		if err := tx.Create(order).Error; err != nil {
+			tx.Rollback()
+			errChan <- err
+			return
+		}
+
+		// Commit the transaction
+		if err := tx.Commit().Error; err != nil {
+			errChan <- err
+			return
+		}
+
+		errChan <- nil // Send nil to indicate success
 	}()
 
-	return <-errChan
+	// Wait for error from channel
+	err := <-errChan
+	return err
 }
 
 func (r *orderRepository) GetAllOrders() ([]models.Order, error) {
@@ -112,6 +138,28 @@ func (r *orderRepository) DeleteOrder(id uuid.UUID) error {
 	}()
 
 	return <-errChan
+}
+
+// Implementation of GetOrderByCartID
+func (r *orderRepository) GetOrderByCartID(cartID uuid.UUID) (*models.Order, error) {
+	var order models.Order
+	errChan := make(chan error, 1)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("Recovered in GetOrderByCartID: %v", r)
+				errChan <- fmt.Errorf("internal server error")
+			}
+			close(errChan)
+		}()
+		errChan <- r.db.Where("cart_id = ?", cartID).First(&order).Error
+	}()
+
+	err := <-errChan
+	if err != nil {
+		return nil, err
+	}
+	return &order, nil
 }
 
 // New metrics methods
@@ -207,4 +255,27 @@ func (r *orderRepository) GetOrdersByRoundID(roundID uuid.UUID) ([]models.Order,
 	}()
 	err := <-errChan
 	return orders, err
+}
+
+func (r *orderRepository) GenLastCode() (string, error) {
+	var lastOrder models.Order
+	err := r.db.Order("created_at desc").First(&lastOrder).Error
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return "", err
+	}
+
+	var lastCode string
+	if err == gorm.ErrRecordNotFound {
+		lastCode = "ORDER00" // Initial code if no records found
+	} else {
+		lastCode = lastOrder.Code
+	}
+
+	var lastNumber int
+	if _, err := fmt.Sscanf(lastCode, "ORDER%02d", &lastNumber); err != nil {
+		return "", fmt.Errorf("invalid order code format")
+	}
+
+	newCode := fmt.Sprintf("ORDER%02d", lastNumber+1)
+	return newCode, nil
 }

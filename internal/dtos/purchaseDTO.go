@@ -7,9 +7,9 @@ import (
 )
 
 type PurchaseCreateDTO struct {
-	CustomerID      uuid.UUID         `json:"customer_id"`
-	RoundID         uuid.UUID         `json:"round_id"`
-	OrderDate       time.Time         `json:"order_date"`
+	CustomerID uuid.UUID `json:"customer_id"`
+	RoundID    uuid.UUID `json:"round_id"`
+	// OrderDate       time.Time         `json:"order_date"`
 	Code            string            `json:"code"`
 	TotalPrice      float64           `json:"total_price"`
 	DeliveryAddress string            `json:"delivery_address"`

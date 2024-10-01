@@ -3,6 +3,7 @@ package controllers
 import (
 	"log"
 	"runtime"
+	"strings"
 	"sync"
 
 	"github.com/B6137151/InventoryMarketplaceSystem/internal/dtos"
@@ -23,15 +24,28 @@ type SalesRoundController interface {
 
 type salesRoundController struct {
 	salesRoundRepository       repositories.SalesRoundRepository
-	orderRepository            repositories.OrderRepository
+	productRepository          repositories.ProductRepository
+	productVariantRepository   repositories.ProductVariantRepository
 	salesRoundDetailRepository repositories.SalesRoundDetailRepository
+	categoryRepository         repositories.CategoryRepository
+	storeRepository            repositories.StoreRepository
 }
 
-func NewSalesRoundController(salesRoundRepository repositories.SalesRoundRepository, orderRepository repositories.OrderRepository, salesRoundDetailRepository repositories.SalesRoundDetailRepository) SalesRoundController {
+func NewSalesRoundController(
+	salesRoundRepository repositories.SalesRoundRepository,
+	productRepository repositories.ProductRepository,
+	productVariantRepository repositories.ProductVariantRepository,
+	salesRoundDetailRepository repositories.SalesRoundDetailRepository,
+	categoryRepository repositories.CategoryRepository,
+	storeRepository repositories.StoreRepository,
+) SalesRoundController {
 	return &salesRoundController{
 		salesRoundRepository:       salesRoundRepository,
-		orderRepository:            orderRepository,
+		productRepository:          productRepository,
+		productVariantRepository:   productVariantRepository,
 		salesRoundDetailRepository: salesRoundDetailRepository,
+		categoryRepository:         categoryRepository,
+		storeRepository:            storeRepository,
 	}
 }
 
@@ -87,14 +101,18 @@ func (c *salesRoundController) CreateSalesRound(ctx *fiber.Ctx) error {
 
 // GetAllSalesRounds godoc
 // @Summary Get all sales rounds
-// @Description Get all sales rounds
+// @Description Get all sales rounds, optionally expanding related entities like products, product variants, sales round details, categories, and stores
 // @Tags Sales Rounds
 // @Accept json
 // @Produce json
+// @Param expand query string false "Fields to expand, e.g. expand=product,product-variant,sales-round-detail,category,store"
 // @Success 200 {array} dtos.SalesRoundResponseDTO
 // @Failure 500 {object} fiber.Map
 // @Router /sales-rounds [get]
 func (c *salesRoundController) GetAllSalesRounds(ctx *fiber.Ctx) error {
+	expand := ctx.Query("expand")
+
+	// Fetch all sales rounds
 	salesRounds, err := c.salesRoundRepository.GetAllSalesRounds()
 	if err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not retrieve sales rounds"})
@@ -102,15 +120,114 @@ func (c *salesRoundController) GetAllSalesRounds(ctx *fiber.Ctx) error {
 
 	var responses []dtos.SalesRoundResponseDTO
 	for _, round := range salesRounds {
-		responses = append(responses, dtos.SalesRoundResponseDTO{
+		response := dtos.SalesRoundResponseDTO{
 			ID:        round.ID,
 			Name:      round.Name,
 			StartDate: round.StartDate,
 			EndDate:   round.EndDate,
-			CreatedAt: round.CreatedAt,
-			UpdatedAt: round.UpdatedAt,
-		})
+			CreatedAt: round.CreatedAt, // Direct assignment
+			UpdatedAt: round.UpdatedAt, // Direct assignment
+		}
+
+		if expand != "" {
+			expansions := strings.Split(expand, ",")
+			for _, exp := range expansions {
+				switch strings.TrimSpace(exp) {
+				case "product":
+					products, err := c.productRepository.GetProductsBySalesRoundID(round.ID)
+					if err != nil {
+						return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not retrieve products"})
+					}
+					var productDTOs []dtos.ProductResponseDTO
+					for _, product := range products {
+						productDTOs = append(productDTOs, dtos.ProductResponseDTO{
+							ID:          product.ID,
+							ProductName: product.ProductName,
+							Brand:       product.Brand,
+							Description: product.Description,
+							Price:       product.Price,
+							ImageURL:    product.ImageURL,
+							CategoryID:  product.CategoryID,
+							StoreID:     product.StoreID,
+						})
+					}
+					response.Products = productDTOs
+
+				case "product-variant":
+					productVariants, err := c.productVariantRepository.GetProductVariantsBySalesRoundID(round.ID)
+					if err != nil {
+						return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not retrieve product variants"})
+					}
+					var productVariantDTOs []dtos.ProductVariantResponseDTO
+					for _, variant := range productVariants {
+						productVariantDTOs = append(productVariantDTOs, dtos.ProductVariantResponseDTO{
+							// ID:        variant.ID,
+							ID:        variant.VariantID,
+							ProductID: variant.ProductID,
+							SKUCode:   variant.SKUCode,
+							Price:     variant.Price,
+							ImageURL:  variant.ImageURL,
+						})
+					}
+					response.ProductVariants = productVariantDTOs
+
+				case "sales-round-detail":
+					salesRoundDetails, err := c.salesRoundDetailRepository.GetSalesRoundDetailsByRoundID(round.ID)
+					if err != nil {
+						return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not retrieve sales round details"})
+					}
+					var salesRoundDetailDTOs []dtos.SalesRoundDetailResponseDTO
+					for _, detail := range salesRoundDetails {
+						// Log the specific ID
+						// log.Printf("Detail ID: %s", detail.ID) // Assuming `detail.ID` is the correct reference
+
+						salesRoundDetailDTOs = append(salesRoundDetailDTOs, dtos.SalesRoundDetailResponseDTO{
+							// ID:            detail.ID,
+							RoundID:       detail.RoundID,
+							VariantID:     detail.VariantID,
+							Quantity:      detail.Quantity,
+							Remaining:     detail.Remaining,
+							ProductStock:  detail.ProductStock,
+							QuantityLimit: detail.QuantityLimit,
+						})
+					}
+					response.SalesRoundDetails = salesRoundDetailDTOs
+
+				case "category":
+					categories, err := c.categoryRepository.GetCategoriesBySalesRoundID(round.ID)
+					if err != nil {
+						return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not retrieve categories"})
+					}
+					var categoryDTOs []dtos.CategoryResponseDTO
+					for _, category := range categories {
+						categoryDTOs = append(categoryDTOs, dtos.CategoryResponseDTO{
+							ID:   category.ID,
+							Name: category.Name,
+						})
+					}
+					response.Categories = categoryDTOs
+
+				case "store":
+					stores, err := c.storeRepository.GetStoresBySalesRoundID(round.ID)
+					if err != nil {
+						return ctx.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not retrieve stores"})
+					}
+					var storeDTOs []dtos.StoreResponseDTO
+					for _, store := range stores {
+						storeDTOs = append(storeDTOs, dtos.StoreResponseDTO{
+							ID:        store.ID,
+							StoreName: store.StoreName,
+							Location:  store.Location,
+						})
+					}
+					response.Stores = storeDTOs
+				}
+			}
+		}
+
+		responses = append(responses, response)
 	}
+
 	return ctx.JSON(responses)
 }
 

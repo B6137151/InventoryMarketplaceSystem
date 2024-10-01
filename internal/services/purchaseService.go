@@ -45,8 +45,11 @@ func NewPurchaseService(
 }
 
 func (s *purchaseService) MakePurchase(request dtos.PurchaseCreateDTO) (dtos.OrderResponseDTO, error) {
-	// Auto-generate order code
-	orderCode := fmt.Sprintf("ORDER-%s", uuid.New().String())
+	// Generate order code using GenLastCode
+	orderCode, err := s.orderRepo.GenLastCode()
+	if err != nil {
+		return dtos.OrderResponseDTO{}, err
+	}
 
 	// Initialize total price
 	totalPrice := 0.0
@@ -89,16 +92,21 @@ func (s *purchaseService) MakePurchase(request dtos.PurchaseCreateDTO) (dtos.Ord
 		}
 	}
 
+	// Convert PaymentSource to ENUM type
+	// paymentSource := models.PaymentSource(request.PaymentSource)
+	status := models.OrderStatusConfirmed
+
 	// Create order
 	order := models.Order{
+		ID:              uuid.New(),
 		CustomerID:      request.CustomerID,
 		RoundID:         request.RoundID,
 		OrderDate:       time.Now(),
-		Status:          "ซื้อ สำเร็จ", // Automatically set status
-		Code:            orderCode,     // Auto-generated order code
-		TotalPrice:      totalPrice,    // Calculated total price
+		Status:          status,
+		Code:            orderCode,
+		TotalPrice:      totalPrice,
 		DeliveryAddress: request.DeliveryAddress,
-		PaymentSource:   request.PaymentSource,
+		// PaymentSource:   paymentSource,
 	}
 
 	if err := s.orderRepo.CreateOrder(&order); err != nil {
@@ -136,15 +144,15 @@ func (s *purchaseService) MakePurchase(request dtos.PurchaseCreateDTO) (dtos.Ord
 	}
 
 	response := dtos.OrderResponseDTO{
-		ID:              order.ID,
-		CustomerID:      order.CustomerID,
-		RoundID:         order.RoundID,
-		OrderDate:       order.OrderDate,
-		Status:          order.Status,
+		ID: order.ID,
+		// CustomerID:      order.CustomerID,
+		// RoundID:         order.RoundID,
+		OrderDate:       time.Now(), // Automatically set the order date
+		Status:          string(order.Status),
 		Code:            order.Code,
 		TotalPrice:      order.TotalPrice,
 		DeliveryAddress: order.DeliveryAddress,
-		PaymentSource:   order.PaymentSource,
+		PaymentSource:   string(order.PaymentSource),
 		CreatedAt:       order.CreatedAt.Format("2006-01-02 15:04:05"),
 		UpdatedAt:       order.UpdatedAt.Format("2006-01-02 15:04:05"),
 	}

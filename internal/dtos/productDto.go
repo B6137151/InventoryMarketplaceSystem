@@ -1,3 +1,4 @@
+// File: internal/dtos/productDto.go
 package dtos
 
 import "github.com/google/uuid"
@@ -30,16 +31,24 @@ type ProductUpdateDTO struct {
 
 // ProductResponseDTO เป็นโครงสร้างข้อมูลที่ใช้สำหรับการตอบกลับข้อมูล Product
 type ProductResponseDTO struct {
-	ID          uuid.UUID `json:"id"`
-	StoreID     uuid.UUID `json:"store_id"`
-	CategoryID  uuid.UUID `json:"category_id"`
-	ProductName string    `json:"product_name"`
-	Brand       string    `json:"brand"`
-	Description string    `json:"description"`
-	Currency    string    `json:"currency"`
-	Stock       int       `json:"stock"`
-	Price       float64   `json:"price"`     // Add Price field
-	ImageURL    string    `json:"image_url"` // Add ImageURL field
-	CreatedAt   string    `json:"created_at"`
-	UpdatedAt   string    `json:"updated_at"`
+	ID           uuid.UUID `json:"id"`
+	StoreID      uuid.UUID `json:"store_id"`
+	StoreName    string    `json:"store_name"` // Add StoreName field
+	CategoryID   uuid.UUID `json:"category_id"`
+	CategoryName string    `json:"category_name"` // Add CategoryName field
+	ProductName  string    `json:"product_name"`
+	Brand        string    `json:"brand"`
+	Description  string    `json:"description"`
+	Currency     string    `json:"currency"`
+	Stock        int       `json:"stock"`
+	Price        float64   `json:"price"`     // Add Price field
+	ImageURL     string    `json:"image_url"` // Add ImageURL field
+	CreatedAt    string    `json:"created_at"`
+	UpdatedAt    string    `json:"updated_at"`
+}
+
+// ProductsResponse is used for responding with a list of products and metadata
+type ProductsResponse struct {
+	Meta MetaData             `json:"meta"` // Reference MetaData from the dtos package
+	Data []ProductResponseDTO `json:"data"`
 }

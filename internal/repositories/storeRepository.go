@@ -1,7 +1,10 @@
 package repositories
 
 import (
+	"strings"
 	"sync"
+
+	"log"
 
 	"github.com/B6137151/InventoryMarketplaceSystem/internal/models"
 	"github.com/google/uuid"
@@ -10,10 +13,12 @@ import (
 
 type StoreRepository interface {
 	CreateStore(store *models.Store) error
-	GetAllStores() ([]models.Store, error)
+	GetAllStores(expand string) ([]models.Store, error) // Updated to include expand parameter
 	GetStoreByID(id uuid.UUID) (*models.Store, error)
 	UpdateStore(store *models.Store) error
 	DeleteStore(id uuid.UUID) error
+	GetStoresBySalesRoundID(salesRoundID uuid.UUID) ([]models.Store, error) // Added method
+
 }
 
 type storeRepository struct {
@@ -47,23 +52,30 @@ func (r *storeRepository) CreateStore(store *models.Store) error {
 	return nil
 }
 
-func (r *storeRepository) GetAllStores() ([]models.Store, error) {
+func (r *storeRepository) GetAllStores(expand string) ([]models.Store, error) { // Updated signature
 	var stores []models.Store
-	var wg sync.WaitGroup
+	query := r.db.Model(&models.Store{})
+
+	// Check if expand contains "products" and preload if necessary
+	if expand != "" && strings.Contains(expand, "products") {
+		query = query.Preload("Products")
+	}
+
 	errChan := make(chan error, 1)
+	var wg sync.WaitGroup
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := r.db.Preload("Products").Preload("Products.Category").Find(&stores).Error; err != nil {
+		if err := query.Find(&stores).Error; err != nil {
 			errChan <- err
+			return
 		}
+		errChan <- nil
 	}()
 
-	go func() {
-		wg.Wait()
-		close(errChan)
-	}()
+	wg.Wait()
+	close(errChan)
 
 	if err := <-errChan; err != nil {
 		return nil, err
@@ -73,21 +85,21 @@ func (r *storeRepository) GetAllStores() ([]models.Store, error) {
 
 func (r *storeRepository) GetStoreByID(id uuid.UUID) (*models.Store, error) {
 	var store models.Store
-	var wg sync.WaitGroup
 	errChan := make(chan error, 1)
+	var wg sync.WaitGroup
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := r.db.Preload("Products.Category").First(&store, "id = ?", id).Error; err != nil {
+		if err := r.db.Preload("Products").First(&store, "id = ?", id).Error; err != nil {
 			errChan <- err
+			return
 		}
+		errChan <- nil
 	}()
 
-	go func() {
-		wg.Wait()
-		close(errChan)
-	}()
+	wg.Wait()
+	close(errChan)
 
 	if err := <-errChan; err != nil {
 		return nil, err
@@ -139,4 +151,17 @@ func (r *storeRepository) DeleteStore(id uuid.UUID) error {
 		return err
 	}
 	return nil
+}
+
+func (r *storeRepository) GetStoresBySalesRoundID(salesRoundID uuid.UUID) ([]models.Store, error) {
+	var stores []models.Store
+	err := r.db.Joins(`JOIN product ON product.store_id = store.id`).
+		Joins(`JOIN "sales-round-detail" ON "sales-round-detail".product_id = product.id`).
+		Where(`"sales-round-detail".round_id = ?`, salesRoundID).
+		Find(&stores).Error
+	if err != nil {
+		log.Println("Error fetching stores by sales round ID:", err)
+	}
+	log.Println("Fetched stores by sales round ID:", stores)
+	return stores, err
 }

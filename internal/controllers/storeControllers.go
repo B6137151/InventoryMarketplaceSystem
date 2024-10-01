@@ -27,6 +27,11 @@ func NewStoreController(storeRepository repositories.StoreRepository) StoreContr
 	return &storeController{storeRepository: storeRepository}
 }
 
+type StoresResponse struct {
+	Meta dtos.MetaData  `json:"meta"`
+	Data []models.Store `json:"data"`
+}
+
 // CreateStore godoc
 // @Summary Create a new store
 // @Description Create a new store
@@ -84,11 +89,13 @@ func (h *storeController) CreateStore(c *fiber.Ctx) error {
 // @Tags Stores
 // @Accept json
 // @Produce json
-// @Success 200 {array} models.Store
+// @Param expand query string false "Comma separated list of related entities to expand"
+// @Success 200 {object} StoresResponse
 // @Failure 500 {object} fiber.Map
 // @Router /stores [get]
 func (h *storeController) GetAllStores(c *fiber.Ctx) error {
 	var stores []models.Store
+	expand := c.Query("expand")
 
 	var wg sync.WaitGroup
 	errChan := make(chan error, 1)
@@ -97,7 +104,9 @@ func (h *storeController) GetAllStores(c *fiber.Ctx) error {
 	go func() {
 		defer wg.Done()
 		var err error
-		stores, err = h.storeRepository.GetAllStores()
+
+		// Pass the expand parameter to the repository
+		stores, err = h.storeRepository.GetAllStores(expand)
 		errChan <- err
 	}()
 
@@ -107,7 +116,16 @@ func (h *storeController) GetAllStores(c *fiber.Ctx) error {
 	if err := <-errChan; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not retrieve stores"})
 	}
-	return c.JSON(stores)
+
+	response := StoresResponse{
+		Meta: dtos.MetaData{
+			Total: len(stores), // Total stores returned
+			Count: len(stores), // This can be different if pagination is implemented
+		},
+		Data: stores,
+	}
+
+	return c.JSON(response)
 }
 
 // GetStoreByID godoc
@@ -117,6 +135,7 @@ func (h *storeController) GetAllStores(c *fiber.Ctx) error {
 // @Accept json
 // @Produce json
 // @Param id path string true "Store ID"
+// @Param expand query string false "Comma separated list of related entities to expand"
 // @Success 200 {object} models.Store
 // @Failure 500 {object} fiber.Map
 // @Router /stores/{id} [get]
@@ -200,7 +219,6 @@ func (h *storeController) UpdateStore(c *fiber.Ctx) error {
 	wg.Wait()
 
 	// Handle potential fetch error
-
 	select {
 	case err := <-errChan:
 		if err != nil {
@@ -286,6 +304,5 @@ func (h *storeController) DeleteStore(c *fiber.Ctx) error {
 }
 
 func init() {
-	// Use all available cores
 	runtime.GOMAXPROCS(runtime.NumCPU())
 }

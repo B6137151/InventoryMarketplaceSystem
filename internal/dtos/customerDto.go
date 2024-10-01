@@ -22,3 +22,9 @@ type CustomerResponseDTO struct {
 	CreatedAt string    `json:"created_at"`
 	UpdatedAt string    `json:"updated_at"`
 }
+
+// CustomersResponse เป็นโครงสร้างข้อมูลที่ใช้สำหรับการตอบกลับข้อมูล Customer หลายรายการพร้อมข้อมูลเมตา
+type CustomersResponse struct {
+	Meta MetaData              `json:"meta"`
+	Data []CustomerResponseDTO `json:"data"`
+}

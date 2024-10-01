@@ -22,3 +22,9 @@ type CategoryResponseDTO struct {
 	CreatedAt string    `json:"created_at"`
 	UpdatedAt string    `json:"updated_at"`
 }
+
+// CategoriesResponse is used to return a list of categories with metadata
+type CategoriesResponse struct {
+	Meta MetaData              `json:"meta"` // References the MetaData struct from metaDataDto.go
+	Data []CategoryResponseDTO `json:"data"`
+}

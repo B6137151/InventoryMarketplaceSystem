@@ -42,6 +42,10 @@ func main() {
 	go func() {
 		defer wg.Done()
 		db := database.SetupDatabase()
+		if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`).Error; err != nil {
+			log.Fatalf("Failed to create extension: %v", err)
+		}
+
 		if err := db.AutoMigrate(
 			&models.Store{},
 			&models.Category{},
@@ -52,7 +56,9 @@ func main() {
 			&models.SalesRound{},
 			&models.ProductVariant{},
 			&models.OrderHistory{},
-			//&models.Purchase{}, // Added Purchase model
+			&models.Cart{},     // Add Cart model
+			&models.CartItem{}, // Add CartItem model
+			//&models.Purchase{},
 		); err != nil {
 			log.Fatalf("Failed to migrate the tables: %v", err)
 		}
@@ -79,6 +85,7 @@ func main() {
 	salesRoundDetailRepository := repositories.NewSalesRoundDetailRepository(db)
 	orderDetailRepository := repositories.NewOrderDetailRepository(db)
 	orderHistoryRepository := repositories.NewOrderHistoryRepository(db)
+	cartRepository := repositories.NewCartRepository(db) // New cart repository
 
 	// Initialize services
 	purchaseService := services.NewPurchaseService(orderRepository, orderDetailRepository, productVariantRepository, productRepository, salesRoundDetailRepository)
@@ -89,12 +96,23 @@ func main() {
 	customerController := controllers.NewCustomerController(customerRepository)
 	productController := controllers.NewProductController(productRepository)
 	productVariantController := controllers.NewProductVariantController(productVariantRepository)
-	salesRoundController := controllers.NewSalesRoundController(salesRoundRepository, orderRepository, salesRoundDetailRepository)
+
+	// Corrected to pass all required arguments
+	salesRoundController := controllers.NewSalesRoundController(
+		salesRoundRepository,
+		productRepository,
+		productVariantRepository,
+		salesRoundDetailRepository,
+		categoryRepository,
+		storeRepository,
+	)
+
 	salesRoundDetailController := controllers.NewSalesRoundDetailController(salesRoundDetailRepository)
-	orderController := controllers.NewOrderController(purchaseService) // Updated to use PurchaseService
+	orderController := controllers.NewOrderController(purchaseService, cartRepository, orderRepository) // Corrected to use cartRepository and orderRepository
 	orderDetailController := controllers.NewOrderDetailController(orderDetailRepository)
 	orderHistoryController := controllers.NewOrderHistoryController(orderHistoryRepository)
-	purchaseController := controllers.NewPurchaseController(purchaseService)
+	purchaseController := controllers.NewPurchaseController(purchaseService, salesRoundDetailRepository)
+	cartController := controllers.NewCartController(cartRepository, salesRoundRepository, productVariantRepository, storeRepository, productRepository) // New cart controller with all five arguments
 
 	// Register routes
 	route.RegisterStoreRoutes(app, storeController)
@@ -108,8 +126,8 @@ func main() {
 	route.RegisterOrderDetailRoutes(app, orderDetailController)
 	route.RegisterOrderHistoryRoutes(app, orderHistoryController)
 	route.RegisterPurchaseRoutes(app, purchaseController)
+	route.CartRoute(app, cartController) // New cart route
 
-	// Serve a simple message at the root URL
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.SendString("Service is up and running!")
 	})

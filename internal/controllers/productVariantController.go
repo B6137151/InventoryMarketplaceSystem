@@ -84,33 +84,26 @@ func (h *productVariantController) CreateProductVariant(c *fiber.Ctx) error {
 // @Tags Product Variants
 // @Accept json
 // @Produce json
-// @Success 200 {array} dtos.ProductVariantResponseDTO
+// @Param expand query string false "Fields to expand, e.g. expand=product"
+// @Success 200 {object} dtos.ProductVariantsResponse
 // @Failure 500 {object} fiber.Map
 // @Router /product-variants [get]
 func (h *productVariantController) GetAllProductVariants(c *fiber.Ctx) error {
+	expand := c.Query("expand")
+
 	var productVariants []models.ProductVariant
+	var err error
 
-	var wg sync.WaitGroup
-	errChan := make(chan error, 1)
-	wg.Add(1)
+	// Fetch all product variants, with related product, store, and category data preloaded
+	productVariants, err = h.productVariantRepository.GetAllProductVariants()
 
-	go func() {
-		defer wg.Done()
-		var err error
-		productVariants, err = h.productVariantRepository.GetAllProductVariants()
-		errChan <- err
-	}()
-
-	wg.Wait()
-	close(errChan)
-
-	if err := <-errChan; err != nil {
+	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not retrieve product variants"})
 	}
 
-	var productVariantResponses []dtos.ProductVariantResponseDTO
-	for _, productVariant := range productVariants {
-		productVariantResponses = append(productVariantResponses, dtos.ProductVariantResponseDTO{
+	productVariantResponses := make([]dtos.ProductVariantResponseDTO, len(productVariants))
+	for i, productVariant := range productVariants {
+		response := dtos.ProductVariantResponseDTO{
 			ID:        productVariant.VariantID,
 			ProductID: productVariant.ProductID,
 			SKUCode:   productVariant.SKUCode,
@@ -118,10 +111,40 @@ func (h *productVariantController) GetAllProductVariants(c *fiber.Ctx) error {
 			ImageURL:  productVariant.ImageURL,
 			CreatedAt: productVariant.CreatedAt.Format("2006-01-02 15:04:05"),
 			UpdatedAt: productVariant.UpdatedAt.Format("2006-01-02 15:04:05"),
-		})
+		}
+
+		if expand == "product" {
+			response.Product = &dtos.ProductResponseDTO{
+				ID:           productVariant.Product.ID,
+				StoreID:      productVariant.Product.StoreID,
+				StoreName:    productVariant.Product.Store.StoreName,
+				CategoryID:   productVariant.Product.CategoryID,
+				CategoryName: productVariant.Product.Category.Name,
+				ProductName:  productVariant.Product.ProductName,
+				Brand:        productVariant.Product.Brand,
+				Description:  productVariant.Product.Description,
+				Currency:     productVariant.Product.Currency,
+				Stock:        productVariant.Product.Stock,
+				Price:        productVariant.Product.Price,
+				ImageURL:     productVariant.Product.ImageURL,
+				CreatedAt:    productVariant.Product.CreatedAt.Format("2006-01-02 15:04:05"),
+				UpdatedAt:    productVariant.Product.UpdatedAt.Format("2006-01-02 15:04:05"),
+			}
+		}
+
+		productVariantResponses[i] = response
 	}
 
-	return c.JSON(productVariantResponses)
+	// Prepare response with metadata
+	response := dtos.ProductVariantsResponse{
+		Meta: dtos.MetaData{
+			Total: len(productVariants),
+			Count: len(productVariantResponses),
+		},
+		Data: productVariantResponses,
+	}
+
+	return c.JSON(response)
 }
 
 // UpdateProductVariant godoc

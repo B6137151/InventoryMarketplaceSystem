@@ -1,9 +1,10 @@
 package models
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"time"
 )
 
 // Category represents a product category
@@ -14,6 +15,7 @@ type Category struct {
 	DeletedAt gorm.DeletedAt `gorm:"type:timestamp with time zone;index"`
 	Name      string         `gorm:"size:255;not null"`
 	StoreID   uuid.UUID      `gorm:"type:uuid;not null;index"` // Store ID for the category
+	Store     Store          `gorm:"foreignKey:StoreID"`       // Added: Relationship with Store
 	Products  []Product      `gorm:"foreignKey:CategoryID"`    // One-to-many relationship with products
 }
 

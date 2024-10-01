@@ -60,20 +60,27 @@ func (h *salesRoundDetailController) CreateSalesRoundDetail(c *fiber.Ctx) error 
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not update product stock"})
 	}
 
-	if err := h.salesRoundDetailRepository.CreateSalesRoundDetail(salesRoundDetail); err != nil {
+	// เปลี่ยนแปลง: รับค่ากลับจาก CreateSalesRoundDetail เป็น 2 ค่า (response และ error)
+	response, err := h.salesRoundDetailRepository.CreateSalesRoundDetail(salesRoundDetail)
+	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not create sales round detail"})
 	}
 
-	return c.JSON(salesRoundDetail)
+	// เปลี่ยนแปลง: รีเทิร์น response แทนการรีเทิร์น salesRoundDetail โดยตรง
+	return c.JSON(response)
 }
 
 func (h *salesRoundDetailController) GetAllSalesRoundDetails(c *fiber.Ctx) error {
-	salesRoundDetails, err := h.salesRoundDetailRepository.GetAllSalesRoundDetails()
+	expand := c.Query("expand")
+	salesRoundDetails, err := h.salesRoundDetailRepository.GetAllSalesRoundDetails(expand)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not fetch sales round details"})
 	}
 	return c.JSON(salesRoundDetails)
 }
+
+// // ข้อผิดพลาดนี้เกิดจากฟังก์ชัน CreateSalesRoundDetail ใน repository มีการแก้ไขให้รีเทิร์น 2 ค่า คือ response และ error
+// แต่ใน controller ยังรีเทิร์นค่าจากฟังก์ชัน CreateSalesRoundDetail โดยคาดหวังแค่ 1 ค่าเท่านั้น
 
 func (h *salesRoundDetailController) UpdateSalesRoundDetail(c *fiber.Ctx) error {
 	id := c.Params("id")

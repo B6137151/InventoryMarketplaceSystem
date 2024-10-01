@@ -70,11 +70,13 @@ func (h *categoryController) CreateCategory(c *fiber.Ctx) error {
 // @Tags Categories
 // @Accept json
 // @Produce json
-// @Success 200 {array} dtos.CategoryResponseDTO
+// @Success 200 {object} dtos.CategoriesResponse
 // @Failure 500 {object} fiber.Map
 // @Router /categories [get]
 func (h *categoryController) GetAllCategories(c *fiber.Ctx) error {
-	categories, err := h.categoryRepository.GetAllCategories()
+	expand := c.Query("expand") // Get the 'expand' query parameter from the request
+
+	categories, err := h.categoryRepository.GetAllCategories(expand) // Pass the expand parameter
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not retrieve categories"})
 	}
@@ -90,7 +92,15 @@ func (h *categoryController) GetAllCategories(c *fiber.Ctx) error {
 		})
 	}
 
-	return c.JSON(categoryResponses)
+	response := dtos.CategoriesResponse{
+		Meta: dtos.MetaData{
+			Total: len(categories), // Total number of categories returned
+			Count: len(categories), // Number of categories in this response
+		},
+		Data: categoryResponses,
+	}
+
+	return c.JSON(response)
 }
 
 // UpdateCategory godoc
